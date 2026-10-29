@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0f1a2b">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Минарет</title>
+<style>
+:root{
+  --night:#0f1a2b; --ochre:#d9a441; --sand:#efe3c8;
+  --display:"Philosopher", Georgia, "Times New Roman", serif; --body:"Rubik", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0}
+body{background:var(--night);color:var(--sand);font-family:var(--body);overflow:hidden;user-select:none;-webkit-user-select:none;touch-action:none;overscroll-behavior:none}
+#wrap{position:fixed;inset:0}
+canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.hud{position:absolute;top:calc(14px + env(safe-area-inset-top,0px));left:0;right:0;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding-left:max(18px,env(safe-area-inset-left,0px));padding-right:max(18px,env(safe-area-inset-right,0px));pointer-events:none}
+.score{font-family:var(--display);font-size:clamp(44px,12vw,68px);line-height:1}
+.label{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ochre)}
+.right{display:flex;gap:14px;align-items:flex-start}
+.best{text-align:right;font-variant-numeric:tabular-nums}
+.best b{display:block;font-size:20px;font-weight:500}
+#snd{pointer-events:auto;width:40px;height:40px;border-radius:50%;border:1px solid rgba(217,164,65,.5);background:rgba(15,26,43,.6);color:var(--sand);font:500 12px var(--body);display:grid;place-items:center;cursor:pointer}
+#combo{position:absolute;left:50%;top:24%;transform:translateX(-50%);font-family:var(--display);font-size:24px;color:var(--ochre);opacity:0;transition:opacity .25s;pointer-events:none;white-space:nowrap;text-shadow:0 2px 10px rgba(0,0,0,.5)}
+#overlay{position:absolute;inset:0;display:grid;place-items:center;padding:20px;background:rgba(8,14,24,.35)}
+.card{max-width:340px;width:100%;background:rgba(15,26,43,.9);border:1px solid rgba(217,164,65,.45);border-radius:8px;padding:28px 22px;text-align:center;display:grid;gap:14px}
+.card h1{font-family:var(--display);font-size:46px;margin:0;line-height:1.05}
+.card p{margin:0;line-height:1.5;color:rgba(239,227,200,.82)}
+.card button{font:500 17px var(--body);border:0;border-radius:6px;padding:14px 20px;cursor:pointer}
+.primary{background:var(--ochre);color:var(--night)}
+.ghost{background:transparent;color:var(--sand);border:1px solid rgba(239,227,200,.35)!important}
+.card button:focus-visible{outline:2px solid var(--sand);outline-offset:3px}
+.hint{font-size:12px;color:rgba(239,227,200,.55)}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <div class="hud">
+    <div><div class="label">Ярусы</div><div class="score" id="score">0</div></div>
+    <div class="right">
+      <div class="best"><div class="label">Рекорд</div><b id="best">0</b></div>
+      <button id="snd" aria-label="Звук">♪</button>
+    </div>
+  </div>
+  <div id="combo"></div>
+  <div id="overlay">
+    <div class="card" id="card">
+      <h1>Минарет</h1>
+      <p>Касайтесь экрана, чтобы класть ярусы ровно. Свисающие края отпадают. Три точных попадания подряд расширяют ярус.</p>
+      <button class="primary" id="play">Начать стройку</button>
+      <div class="hint">Касание в любом месте экрана — положить ярус</div>
+    </div>
+  </div>
+</div>
+<script>
+(()=>{
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+const $=id=>document.getElementById(id);
+const PAL=['#1f5fa8','#2fb3a8','#d9a441','#2a7fc4','#e8d6ab','#17807a'];
+const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+let W,H,dpr,LH;
+function resize(){dpr=Math.min(2,devicePixelRatio||1);W=innerWidth;H=innerHeight;cv.width=W*dpr;cv.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);LH=Math.max(26,Math.min(36,H/24))}
+addEventListener('resize',resize);resize();
+
+const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+let best=+store.get('minaret-best')||0;$('best').textContent=best;
+
+// sound
+let ac=null,soundOn=store.get('minaret-sound')!=='0';
+function upd(){$('snd').textContent=soundOn?'♪':'×';$('snd').setAttribute('aria-pressed',soundOn)}upd();
+$('snd').addEventListener('pointerdown',e=>{e.stopPropagation();soundOn=!soundOn;store.set('minaret-sound',soundOn?'1':'0');upd()});
+function tone(f,d=.12,type='triangle',v=.15){
+  if(!soundOn)return;
+  try{ac=ac||new (window.AudioContext||window.webkitAudioContext)();if(ac.state==='suspended')ac.resume();
+  const o=ac.createOscillator(),g=ac.createGain();o.type=type;o.frequency.value=f;
+  g.gain.setValueAtTime(v,ac.currentTime);g.gain.exponentialRampToValueAtTime(.001,ac.currentTime+d);
+  o.connect(g).connect(ac.destination);o.start();o.stop(ac.currentTime+d)}catch(e){}
+}
+const SCALE=[0,2,4,7,9,12,14,16,19,21,24];
+function buzz(ms){try{const t=Array.isArray(ms)?ms.reduce((a,b)=>a+b,0):ms;if(window.AndroidApp)AndroidApp.vibrate(t);else if(navigator.vibrate)navigator.vibrate(ms)}catch(e){}}
+
+let stack,cur,dir,speed,camY,targetCam,falling,state='menu',combo,usedChance;
+const baseW=()=>Math.min(240,W*0.6);
+const stars=Array.from({length:80},()=>({x:Math.random(),y:Math.random(),r:Math.random()*1.3+.3,p:Math.random()*6}));
+
+function reset(){const bw=baseW();stack=[{x:W/2-bw/2,w:bw,c:0}];falling=[];combo=0;camY=0;targetCam=0;speed=2.2;usedChance=false;spawn();$('score').textContent=0}
+function spawn(){const top=stack[stack.length-1];dir=stack.length%2?1:-1;cur={x:dir>0?-top.w:W,w:top.w,c:stack.length}}
+function yOf(i){return H-110-i*LH}
+function place(){
+  if(state!=='play')return;
+  const top=stack[stack.length-1];
+  const l=Math.max(cur.x,top.x),r=Math.min(cur.x+cur.w,top.x+top.w),ov=r-l;
+  if(ov<=0){falling.push({...cur,y:yOf(stack.length),vy:0,rot:0,d:dir});tone(110,.4,'sawtooth',.12);buzz([60,40,60]);return over()}
+  let nb;
+  if(Math.abs(cur.x-top.x)<Math.max(4,W*0.012)){
+    combo++;let w=top.w;if(combo>=3)w=Math.min(baseW(),w+10);
+    nb={x:top.x-(w-top.w)/2,w,c:cur.c};
+    flash(combo>=3?'Идеально ×'+combo:'Идеально');
+    tone(440*Math.pow(2,SCALE[Math.min(combo,SCALE.length-1)]/12),.22,'sine',.18);buzz(15);
+  }else{
+    combo=0;nb={x:l,w:ov,c:cur.c};
+    falling.push({x:cur.x<top.x?cur.x:r,w:cur.w-ov,c:cur.c,y:yOf(stack.length),vy:0,rot:0,d:cur.x<top.x?-1:1});
+    tone(300+Math.random()*40,.1);buzz(8);
+  }
+  stack.push(nb);$('score').textContent=stack.length-1;
+  speed=Math.min(6.5,2.2+stack.length*0.09)*(W/400>1?1:Math.max(.8,W/400));
+  targetCam=Math.max(0,(stack.length-Math.floor(H/LH*0.45))*LH);
+  spawn();
+}
+let fT;function flash(s){const e=$('combo');e.textContent=s;e.style.opacity=1;clearTimeout(fT);fT=setTimeout(()=>e.style.opacity=0,700)}
+function over(){
+  state='over';const s=stack.length-1;const rec=s>best;
+  if(rec){best=s;store.set('minaret-best',best);$('best').textContent=best}
+  setTimeout(()=>{
+    const msg=s<10?'Фундамент заложен. Попробуйте ещё раз.':s<25?'Хороший минарет, его видно с базара.':s<50?'Минарет видно с самого Регистана.':'Мастер-зодчий. Выше уже облака.';
+    $('card').innerHTML=`<h1>${s}</h1><p>${rec&&s>0?'Новый рекорд! ':''}${msg}</p>`+
+      (!usedChance&&s>=5?`<button class="ghost" id="chance">Второй шанс</button>`:'')+
+      `<button class="primary" id="play">Строить заново</button>`;
+    $('overlay').hidden=false;$('play').onclick=start;
+    const ch=$('chance');if(ch)ch.onclick=()=>{usedChance=true;$('overlay').hidden=true;spawn();state='play'};
+  },650);
+}
+function start(){$('overlay').hidden=true;reset();state='play';tone(523,.15,'sine',.1)}
+$('play').onclick=start;
+addEventListener('keydown',e=>{if(e.code==='Space'||e.code==='Enter'){e.preventDefault();state==='play'?place():$('overlay').hidden||start()}});
+cv.addEventListener('pointerdown',e=>{e.preventDefault();place()});
+document.addEventListener('visibilitychange',()=>{last=performance.now()});
+
+function tile(x,y,w,c){
+  const h=LH-2;ctx.fillStyle=PAL[c%PAL.length];ctx.fillRect(x,y,w,h);
+  ctx.fillStyle='rgba(0,0,0,.18)';ctx.fillRect(x,y+h-6,w,6);
+  ctx.fillStyle='rgba(255,255,255,.16)';ctx.fillRect(x,y,w,3);
+  ctx.save();ctx.beginPath();ctx.rect(x,y,w,h);ctx.clip();
+  ctx.strokeStyle=c%3===2?'rgba(15,26,43,.35)':'rgba(239,227,200,.35)';ctx.lineWidth=1.5;
+  const s=14,cy=y+h/2,a=Math.min(7,h/3.5),off=(c%2)*7;
+  for(let px=x-s+off;px<x+w+s;px+=s){ctx.beginPath();ctx.moveTo(px,cy);ctx.lineTo(px+s/2,cy-a);ctx.lineTo(px+s,cy);ctx.lineTo(px+s/2,cy+a);ctx.closePath();ctx.stroke()}
+  ctx.restore();
+}
+function sky(t){
+  const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#0b1422');g.addColorStop(1,'#26324c');
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  for(const s of stars){const a=reduce?.5:.35+.35*Math.sin(t/900+s.p);ctx.fillStyle=`rgba(239,227,200,${a})`;ctx.beginPath();ctx.arc(s.x*W,(s.y*H*.75+camY*.15)%H,s.r,0,7);ctx.fill()}
+  const my=H*.2+camY*.08;
+  if(my<H+40){ctx.fillStyle='#efe3c8';ctx.beginPath();ctx.arc(W*.8,my,22,0,7);ctx.fill();ctx.fillStyle='#0d1726';ctx.beginPath();ctx.arc(W*.8+9,my-5,20,0,7);ctx.fill()}
+}
+function ground(){
+  const gy=yOf(0)+LH-2+camY;if(gy>H)return;
+  ctx.fillStyle='#14233a';ctx.beginPath();ctx.moveTo(0,gy);
+  for(const[d,r]of[[.12,40],[.3,26],[.8,34],[.94,22]]){ctx.lineTo(d*W-r,gy);ctx.arc(d*W,gy,r,Math.PI,0)}
+  ctx.lineTo(W,gy);ctx.lineTo(W,H);ctx.lineTo(0,H);ctx.fill();
+  ctx.fillStyle='#d9a441';ctx.fillRect(0,gy,W,3);
+}
+let last=performance.now();
+function loop(now){
+  const dt=Math.min(32,now-last)/16.67;last=now;
+  camY+=(targetCam-camY)*.08*dt;
+  sky(now);ground();
+  ctx.save();ctx.translate(0,camY);
+  const from=Math.max(0,stack.length-Math.ceil(H/LH)-4);
+  for(let i=from;i<stack.length;i++)tile(stack[i].x,yOf(i),stack[i].w,stack[i].c);
+  if(state==='play'){
+    cur.x+=dir*speed*dt;
+    if(cur.x>W-cur.w*.2&&dir>0||cur.x<-cur.w*.8&&dir<0)dir*=-1;
+    const top=stack[stack.length-1];
+    ctx.fillStyle='rgba(239,227,200,.06)';ctx.fillRect(top.x,yOf(stack.length),top.w,LH-2);
+    tile(cur.x,yOf(stack.length),cur.w,cur.c);
+  }
+  falling=falling.filter(f=>{f.vy+=.45*dt;f.y+=f.vy*dt;f.rot+=(f.d||1)*.03*dt;
+    ctx.save();ctx.translate(f.x+f.w/2,f.y+LH/2);ctx.rotate(f.rot);tile(-f.w/2,-LH/2,f.w,f.c);ctx.restore();
+    return f.y+camY<H+200});
+  ctx.restore();requestAnimationFrame(loop);
+}
+reset();requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
