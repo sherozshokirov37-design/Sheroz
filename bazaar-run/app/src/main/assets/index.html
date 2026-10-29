@@ -328,7 +328,41 @@ function drawPlayer(){
   const blink=grace>0&&jet<=0&&Math.floor(grace*10)%2===0;
   if(blink)ctx.globalAlpha=.45;
   ctx.save();ctx.translate(x,y);
-  if(sliding){
+  if(jet>0&&pl.y>1){
+    // flying flat, seen from behind and above: feet nearest the camera, head furthest away
+    const t=performance.now(),bob=.04*Math.sin(t/160);
+    ctx.rotate(Math.max(-.35,Math.min(.35,(pl.lane*LW-pl.x)*.18)));
+    ctx.translate(0,bob*u-.25*u);ctx.scale(1.12,.52);   // foreshortened: the body lies along the view direction
+    // exhaust trails toward the camera
+    for(const sd of[-1,1]){
+      const fl=.9+.25*Math.sin(t/35+sd);
+      ctx.fillStyle='rgba(255,122,42,.85)';ctx.beginPath();ctx.moveTo(sd*.15*u-.1*u,-.5*u);ctx.lineTo(sd*.15*u+.1*u,-.5*u);ctx.lineTo(sd*.15*u,(-.5+fl)*u);ctx.closePath();ctx.fill();
+      ctx.fillStyle='#ffd65a';ctx.beginPath();ctx.moveTo(sd*.15*u-.05*u,-.5*u);ctx.lineTo(sd*.15*u+.05*u,-.5*u);ctx.lineTo(sd*.15*u,(-.5+fl*.6)*u);ctx.closePath();ctx.fill();
+    }
+    // legs stretched back, soles facing us
+    for(const sd of[-1,1]){
+      ctx.fillStyle='#3b2a20';ctx.fillRect(sd*.24*u-.09*u,-.46*u,.18*u,.34*u);
+      ctx.fillStyle='#1b1410';ctx.fillRect(sd*.24*u-.1*u,-.16*u,.2*u,.1*u);
+    }
+    // robe, foreshortened, with ikat stripes running along the body
+    poly([[-.34*u,-.4*u],[.34*u,-.4*u],[.28*u,-1.04*u],[-.28*u,-1.04*u]],'#33409a');
+    ctx.fillStyle='#e8a33d';for(const q of[-.2,.2])ctx.fillRect(q*u-.025*u,-1.04*u,.05*u,.64*u);
+    ctx.fillStyle='#c2366b';ctx.fillRect(-.34*u,-.56*u,.68*u,.07*u);
+    // jetpack lying on the back
+    for(const sd of[-1,1]){
+      ctx.fillStyle='#e8a33d';ctx.fillRect(sd*.15*u-.1*u,-.98*u,.2*u,.5*u);
+      ctx.fillStyle='#8a5a3b';ctx.fillRect(sd*.15*u-.1*u,-1.0*u,.2*u,.06*u);ctx.fillRect(sd*.15*u-.11*u,-.54*u,.22*u,.06*u);
+    }
+    // arms reaching forward past the head
+    ctx.fillStyle='#33409a';
+    ctx.save();ctx.translate(-.28*u,-.98*u);ctx.rotate(.12);ctx.fillRect(-.07*u,-.5*u,.14*u,.5*u);ctx.restore();
+    ctx.save();ctx.translate(.28*u,-.98*u);ctx.rotate(-.12);ctx.fillRect(-.07*u,-.5*u,.14*u,.5*u);ctx.restore();
+    ctx.fillStyle='#c98b5e';oval(-.22*u,-1.5*u,.08*u,.08*u);ctx.fill();oval(.22*u,-1.5*u,.08*u,.08*u);ctx.fill();
+    // head from behind, doppi on top
+    ctx.fillStyle='#2a1a12';ctx.beginPath();ctx.arc(0,-1.17*u,.19*u,0,7);ctx.fill();
+    poly([[-.2*u,-1.22*u],[.2*u,-1.22*u],[.16*u,-1.4*u],[-.16*u,-1.4*u]],'#1b1410');
+    ctx.fillStyle='#fff4df';for(const q of[-.09,.09]){oval(q*u,-1.31*u,.04*u,.06*u,q*4);ctx.fill()}
+  }else if(sliding){
     // slide: low crouch, knees bent outward, arms out for balance, robe flaring
     const k=.12*Math.sin(pl.phase*2);
     ctx.fillStyle='#3b2a20';
