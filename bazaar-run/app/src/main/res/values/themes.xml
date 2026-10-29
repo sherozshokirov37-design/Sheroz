@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Bazaar" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#e9c48a</item>
+        <item name="android:statusBarColor">#2a1a12</item>
+        <item name="android:navigationBarColor">#2a1a12</item>
+    </style>
+</resources>
